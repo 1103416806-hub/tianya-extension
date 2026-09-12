@@ -1,0 +1,36 @@
+import {chromium} from 'playwright';
+import {resolve} from 'node:path';
+import {writeFile,mkdir} from 'node:fs/promises';
+import assert from 'node:assert/strict';
+const extension=resolve('../../outputs/tianya-extension'),shots=resolve('../../outputs/screenshots');
+await mkdir(shots,{recursive:true});
+const browser=await chromium.launchPersistentContext(resolve('.ux-test-profile'),{executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true,viewport:{width:440,height:940},args:[`--disable-extensions-except=${extension}`,`--load-extension=${extension}`]});
+const passed=[],errors=[],requests=[];
+try{
+ const worker=browser.serviceWorkers()[0]||await browser.waitForEvent('serviceworker');await worker.evaluate(()=>Promise.all([chrome.storage.local.clear(),chrome.storage.session.clear()]));
+ const panel=await browser.newPage();panel.on('dialog',d=>d.accept());panel.on('pageerror',e=>errors.push(e.message));panel.on('request',r=>{if(/^https?:/.test(r.url()))requests.push(r.url());});
+ await panel.goto(worker.url().replace('background.js','panel.html'));
+ await panel.getByRole('button',{name:'01 我的简历'}).click();
+ const file=panel.getByLabel('选择简历文件',{exact:true});
+ const first='个人简历\n张 三\n求职意向：产品实习生\n138 0013 8000\ndemo.user @ example . com';
+ await file.setInputFiles({name:'header.txt',mimeType:'text/plain',buffer:Buffer.from(first)});await panel.getByText(/已提取 \d+ 个字符/).waitFor();
+ assert.equal(await panel.getByLabel('姓名',{exact:true}).inputValue(),'张三');passed.push('首次上传无需额外点击，姓名进入可编辑草稿');
+ assert.equal(await panel.getByLabel('手机号码',{exact:true}).inputValue(),'13800138000');assert.equal(await panel.getByLabel('电子邮箱',{exact:true}).inputValue(),'demo.user@example.com');passed.push('带空格的手机和邮箱正确规范化');
+ const report=panel.getByRole('region',{name:'本地解析结果'});await report.getByText('本地规则 · 非 AI').waitFor();await report.getByText('原文「张 三」').waitFor();passed.push('初步解析明确标注规则方式与姓名原文依据');
+ await panel.getByLabel('关闭提示').click();await panel.evaluate(()=>scrollTo(0,0));await panel.screenshot({path:resolve(shots,'07-自动解析与来源.png')});
+ const openAI=panel.getByRole('button',{name:'AI 解析设置'});await openAI.scrollIntoViewIfNeeded();const beforeScroll=await panel.evaluate(()=>scrollY);await openAI.click();
+ await panel.getByRole('button',{name:'返回我的简历'}).waitFor();await panel.getByLabel('模型名称',{exact:true}).fill('未保存的模型草稿');
+ await panel.screenshot({path:resolve(shots,'08-AI设置返回入口.png')});await panel.getByRole('button',{name:'返回我的简历'}).click();
+ assert.equal(await panel.locator('textarea.source').inputValue(),first);assert.equal(await panel.getByLabel('姓名',{exact:true}).inputValue(),'张三');assert.ok(await report.isVisible());passed.push('AI 设置返回后保留原文、个人资料与解析预览');
+ assert.ok(Math.abs((await panel.evaluate(()=>scrollY))-beforeScroll)<80);passed.push('返回上一步恢复原阅读位置');
+ await openAI.click();assert.equal(await panel.getByLabel('模型名称',{exact:true}).inputValue(),'未保存的模型草稿');await panel.getByRole('button',{name:'返回我的简历'}).click();passed.push('同一会话中保留设置页尚未提交的草稿');
+ await panel.getByLabel('姓名',{exact:true}).fill('手动保留');
+ await file.setInputFiles({name:'second.txt',mimeType:'text/plain',buffer:Buffer.from('王语桐\n13900139000\nwang@example.com')});await panel.getByText(/已提取 \d+ 个字符/).waitFor();
+ assert.equal(await panel.getByLabel('姓名',{exact:true}).inputValue(),'手动保留');await report.getByText('王语桐',{exact:true}).waitFor();passed.push('再次上传只预览，不覆盖已有人工修改');
+ await panel.getByRole('button',{name:'使用这份解析结果'}).click();assert.equal(await panel.getByLabel('姓名',{exact:true}).inputValue(),'王语桐');passed.push('确认采用后才替换原简历');
+ assert.equal(await panel.getByRole('button',{name:/公司推荐/}).count(),0);assert.deepEqual(await panel.locator('.tabs button').allTextContents(),['01我的简历','02填当前页']);passed.push('公司推荐已撤下，导航聚焦简历与填写');
+ for(const width of [340,1280]){await panel.setViewportSize({width,height:900});await panel.evaluate(()=>scrollTo(0,0));assert.equal(await panel.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);await panel.screenshot({path:resolve(shots,`10-双入口-${width}.png`)});}passed.push('340px 与 1280px 双入口布局无横向溢出');
+ await panel.setViewportSize({width:340,height:900});await panel.getByRole('button',{name:/我的简历$/}).click();await panel.getByLabel('AI 与隐私设置').click();await panel.getByRole('button',{name:'返回我的简历'}).waitFor();assert.equal(await panel.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);passed.push('窄屏返回按钮可见且无横向溢出');
+ assert.deepEqual(errors,[]);assert.deepEqual(requests,[]);passed.push('上述本地流程无页面错误或外部网络请求');
+ console.log(`PASS ${passed.length} UX checks`);await writeFile('tests/ux-result.json',JSON.stringify({date:new Date().toISOString(),passed,errors,requests},null,2));
+}finally{await browser.close();}
