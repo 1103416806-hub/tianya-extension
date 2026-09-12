@@ -1,0 +1,17 @@
+node_modules/
+.npm-cache/
+.browsers/
+.*profile*/
+.web-test-extension/
+.form-test-extension/
+.permission-probe/
+tests/*result.json
+.pdf-compat-*/
+.env
+.env.*
+!.env.example
+private-data/
+private-archive-backups/
+*.local.*
+test-results/
+evals/*-results.json

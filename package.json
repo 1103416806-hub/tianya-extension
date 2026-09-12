@@ -1,0 +1,9 @@
+{
+  "name": "tianya-extension",
+  "version": "0.1.5",
+  "private": true,
+  "type": "module",
+  "scripts": {"build": "node build.mjs", "test": "node --test tests/core.test.mjs tests/pdf-compat.test.mjs tests/form-profile.test.mjs", "test:browser": "node tests/browser.mjs"},
+  "dependencies": {"react": "19.2.6", "react-dom": "19.2.6", "pdfjs-dist": "6.3.289", "mammoth": "1.12.2"},
+  "devDependencies": {"esbuild": "0.28.2", "playwright": "1.63.0"}
+}
