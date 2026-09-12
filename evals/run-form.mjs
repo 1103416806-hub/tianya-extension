@@ -1,0 +1,11 @@
+import {suggest} from '../src/core.js';
+import {profile,cases} from './form-cases.mjs';
+import {readFile,writeFile} from 'node:fs/promises';
+const name=process.argv[2];if(!/^[a-z0-9.-]+$/i.test(name||''))throw Error('Pass a report name');
+const version=JSON.parse(await readFile('manifest.json','utf8')).version;
+const runs=Array.from({length:3},()=>cases.map(c=>{const actual=suggest(c.field,c.profile||profile,c.binding).key;return {id:c.id,expected:c.expected,actual,pass:actual===c.expected};}));
+const counts=runs.map(r=>r.filter(x=>x.pass).length);
+const report={version,model:'none; deterministic matching',prompt:'not evaluated',date:new Date().toISOString(),source:'Supplied field labels and written boundary cases; invented profile values; not captured live DOM',notCovered:['Authenticated Feishu form DOM','Real model extraction accuracy','Custom selects/date widgets','Automatic creation of repeated cards'],total:cases.length,passed:counts,spread:Math.max(...counts)-Math.min(...counts),runs};
+await writeFile(new URL(`./${name}-results.json`,import.meta.url),JSON.stringify(report,null,2),{flag:'wx'});
+console.log(`${name}: ${counts.join(', ')} / ${cases.length}; spread ${report.spread}`);
+for(const c of runs[0].filter(c=>!c.pass))console.log('FAIL',c.id,`expected=${c.expected||'(manual)'}, actual=${c.actual||'(manual)'}`);
